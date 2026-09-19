@@ -86,7 +86,7 @@
 
   <header>
     <h1>YTD / YDD Name Changer</h1>
-    <p>Convert ped assets for <b>mp_f_freemode_01^</b> (female) or <b>mp_m_freemode_01^</b> (male)</p>
+    <p>Convert ped assets for <b>mp_f_freemode_01^</b> (female) or <b>mp_m_freemode_01^</b> (male) — downloads as a single .zip</p>
   </header>
 
   <div id="drop" class="card" style="padding:0">
@@ -112,7 +112,7 @@
         <input type="checkbox" id="hashOpt" checked />
         Update internal name-hash if a name string exists
       </label>
-      <button class="btn" id="convertBtn">⚡ Convert</button>
+      <button class="btn" id="convertBtn">⚡ Convert &amp; Download .ZIP</button>
     </div>
   </div>
 
@@ -153,7 +153,6 @@ let uid = 0;
    HELPERS
    ============================================================ */
 const $ = (id) => document.getElementById(id);
-const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 function lowerByte(b){ return (b >= 0x41 && b <= 0x5A) ? b + 0x20 : b; }
 function strCodes(s){ const a = new Array(s.length); for (let i=0;i<s.length;i++) a[i]=s.charCodeAt(i); return a; }
@@ -217,14 +216,10 @@ function fmtSize(b){
 
 /* ============================================================
    NAME DETECTION
-   Most GTA V YTD/YDD files (RSC7) do NOT store a readable
-   internal name. The name is purely the filename. So we always
-   fall back to the filename stem if no internal string exists.
    ============================================================ */
 function detectName(buf, filename){
   const stem = stemOf(filename);
 
-  // 1) Filename stem as a clean C-string inside the file
   let off = findAscii(buf, strCodes(stem));
   if (off >= 0){
     const info = readNameAt(buf, off);
@@ -232,14 +227,12 @@ function detectName(buf, filename){
     return { off, text: stem, end: off + stem.length, source: 'internal-partial' };
   }
 
-  // 2) Full filename with extension
   off = findAscii(buf, strCodes(filename));
   if (off >= 0){
     const info = readNameAt(buf, off);
     if (info) return { off, text: info.text, end: info.end, source: 'internal' };
   }
 
-  // 3) Any known ped prefix (file might already be a freemode asset)
   for (const p of [FEMALE_PREFIX, MALE_PREFIX]){
     off = findAscii(buf, strCodes(p));
     if (off >= 0){
@@ -248,16 +241,11 @@ function detectName(buf, filename){
     }
   }
 
-  // 4) Fallback — no readable name inside. Use the filename stem.
   return { off: -1, text: stem, end: -1, source: 'filename' };
 }
 
 /* ============================================================
    NAME BUILDING
-   Rules:
-     - If old name already starts with a known ped prefix
-       (with or without ^), swap the prefix, keep the rest.
-     - Otherwise, prepend targetPrefix + '^'.
    ============================================================ */
 function buildNewName(oldName, targetPrefix){
   const lower = oldName.toLowerCase();
@@ -293,14 +281,16 @@ function convertBuffer(src, filename, targetPrefix, opts){
   const noChange = (oldName === newName);
 
   let hashHits = 0;
+  let internalUpdated = false;
 
-  // Only touch file bytes if a real internal string was found
   if (found.off >= 0 && !noChange){
     const room = found.end - found.off;
     if (newName.length <= room){
       for (let k = 0; k < room; k++){
         buf[found.off + k] = (k < newName.length) ? newName.charCodeAt(k) : 0x00;
       }
+      internalUpdated = true;
+
       if (opts.updateHash){
         const oldHash = joaat(oldName);
         const newHash = joaat(newName);
@@ -318,8 +308,6 @@ function convertBuffer(src, filename, targetPrefix, opts){
         }
       }
     }
-    // If newName is longer than room, we skip byte rewriting.
-    // The filename rename is what actually matters for the game.
   }
 
   return {
@@ -329,9 +317,115 @@ function convertBuffer(src, filename, targetPrefix, opts){
     newName,
     hashHits,
     source: found.source,
-    internalUpdated: (found.off >= 0 && newName.length <= (found.end - found.off)),
+    internalUpdated,
     noChange
   };
+}
+
+/* ============================================================
+   MINIMAL ZIP WRITER (store / no compression)
+   ============================================================ */
+const CRC_TABLE = (() => {
+  const t = new Uint32Array(256);
+  for (let i = 0; i < 256; i++){
+    let c = i;
+    for (let j = 0; j < 8; j++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+    t[i] = c >>> 0;
+  }
+  return t;
+})();
+
+function crc32(buf){
+  let crc = 0xFFFFFFFF;
+  for (let i = 0; i < buf.length; i++){
+    crc = (crc >>> 8) ^ CRC_TABLE[(crc ^ buf[i]) & 0xFF];
+  }
+  return (crc ^ 0xFFFFFFFF) >>> 0;
+}
+
+function makeZip(files){
+  const enc = new TextEncoder();
+  const parts = [];
+  const central = [];
+  let offset = 0;
+
+  const now = new Date();
+  const dosTime = ((now.getHours() << 11) | (now.getMinutes() << 5) | (now.getSeconds() >> 1)) & 0xFFFF;
+  const dosDate = (((now.getFullYear() - 1980) << 9) | ((now.getMonth() + 1) << 5) | now.getDate()) & 0xFFFF;
+
+  for (const f of files){
+    const nameBytes = enc.encode(f.name);
+    const data = f.data;
+    const crc = crc32(data);
+    const size = data.length;
+
+    // Local file header
+    const lfh = new Uint8Array(30 + nameBytes.length);
+    const dv = new DataView(lfh.buffer);
+    dv.setUint32(0, 0x04034b50, true);
+    dv.setUint16(4, 20, true);
+    dv.setUint16(6, 0, true);
+    dv.setUint16(8, 0, true);            // store
+    dv.setUint16(10, dosTime, true);
+    dv.setUint16(12, dosDate, true);
+    dv.setUint32(14, crc, true);
+    dv.setUint32(18, size, true);
+    dv.setUint32(22, size, true);
+    dv.setUint16(26, nameBytes.length, true);
+    dv.setUint16(28, 0, true);
+    lfh.set(nameBytes, 30);
+
+    parts.push(lfh);
+    parts.push(data);
+
+    // Central directory
+    const cdh = new Uint8Array(46 + nameBytes.length);
+    const dv2 = new DataView(cdh.buffer);
+    dv2.setUint32(0, 0x02014b50, true);
+    dv2.setUint16(4, 20, true);
+    dv2.setUint16(6, 20, true);
+    dv2.setUint16(8, 0, true);
+    dv2.setUint16(10, 0, true);
+    dv2.setUint16(12, dosTime, true);
+    dv2.setUint16(14, dosDate, true);
+    dv2.setUint32(16, crc, true);
+    dv2.setUint32(20, size, true);
+    dv2.setUint32(24, size, true);
+    dv2.setUint16(28, nameBytes.length, true);
+    dv2.setUint16(30, 0, true);
+    dv2.setUint16(32, 0, true);
+    dv2.setUint16(34, 0, true);
+    dv2.setUint16(36, 0, true);
+    dv2.setUint32(38, 0, true);
+    dv2.setUint32(42, offset, true);
+    cdh.set(nameBytes, 46);
+    central.push(cdh);
+
+    offset += lfh.length + size;
+  }
+
+  const centralStart = offset;
+  let centralSize = 0;
+  for (const c of central) centralSize += c.length;
+
+  const eocd = new Uint8Array(22);
+  const dv3 = new DataView(eocd.buffer);
+  dv3.setUint32(0, 0x06054b50, true);
+  dv3.setUint16(4, 0, true);
+  dv3.setUint16(6, 0, true);
+  dv3.setUint16(8, files.length, true);
+  dv3.setUint16(10, files.length, true);
+  dv3.setUint32(12, centralSize, true);
+  dv3.setUint32(16, centralStart, true);
+  dv3.setUint16(20, 0, true);
+
+  const all = [...parts, ...central, eocd];
+  let total = 0;
+  for (const p of all) total += p.length;
+  const out = new Uint8Array(total);
+  let pos = 0;
+  for (const p of all){ out.set(p, pos); pos += p.length; }
+  return out;
 }
 
 /* ============================================================
@@ -362,13 +456,7 @@ async function addFiles(fileList){
     try {
       const buf = new Uint8Array(await f.arrayBuffer());
       const found = detectName(buf, f.name);
-      items.push({
-        id: ++uid,
-        file: f,
-        buf,
-        detected: found,
-        size: f.size
-      });
+      items.push({ id: ++uid, file: f, buf, detected: found, size: f.size });
       added++;
     } catch (e){
       log(`Failed to read "${f.name}": ${e.message}`, 'b');
@@ -391,11 +479,9 @@ function render(){
   list.innerHTML = '';
   for (const it of items){
     const d = it.detected;
-    const base = d.text;
-
     const sub = d.source === 'filename'
-      ? `name: <em>${escapeHtml(base)}</em> <span style="color:#8b949e">(from filename — no internal name string)</span>`
-      : `internal: <em>${escapeHtml(base)}</em>`;
+      ? `name: <em>${escapeHtml(d.text)}</em> <span style="color:#8b949e">(from filename)</span>`
+      : `internal: <em>${escapeHtml(d.text)}</em>`;
 
     const badge = d.source === 'filename'
       ? '<span class="badge warn">filename</span>'
@@ -439,42 +525,63 @@ function download(blob, filename){
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
-  setTimeout(() => URL.revokeObjectURL(url), 4000);
+  setTimeout(() => URL.revokeObjectURL(url), 8000);
 }
 
 /* ============================================================
-   CONVERT
+   CONVERT (builds one .zip)
    ============================================================ */
 async function doConvert(gender){
   hideModal();
 
   const targetPrefix = (gender === 'f') ? FEMALE_PREFIX : MALE_PREFIX;
+  const genderTag    = (gender === 'f') ? 'female' : 'male';
   const updateHash   = $('hashOpt').checked;
 
   log(`──────────────────────────────────────────`, '');
-  log(`Converting ${items.length} file(s) → ${targetPrefix}^  (${gender === 'f' ? 'FEMALE' : 'MALE'})`, 'a');
+  log(`Converting ${items.length} file(s) → ${targetPrefix}^  (${genderTag.toUpperCase()})`, 'a');
 
-  let ok = 0, skipped = 0;
+  const zipEntries = [];
+  const usedNames = new Set();
+  let ok = 0, skipped = 0, failed = 0;
 
   for (const it of items){
-    const res = convertBuffer(it.buf, it.file.name, targetPrefix, { updateHash });
+    let res;
+    try {
+      res = convertBuffer(it.buf, it.file.name, targetPrefix, { updateHash });
+    } catch (e){
+      log(`✗ ${it.file.name}\n   ${e.message}`, 'b');
+      failed++;
+      continue;
+    }
 
     if (res.noChange){
-      log(`– ${it.file.name}\n   already "${res.newName}" — no change needed.`, 'w');
+      log(`– ${it.file.name}\n   already "${res.newName}" — skipping.`, 'w');
       skipped++;
       continue;
     }
 
-    const outName = newFileName(it.file.name, targetPrefix);
-    const blob = new Blob([res.buf], { type: 'application/octet-stream' });
-    download(blob, outName);
+    let outName = newFileName(it.file.name, targetPrefix);
+
+    // Avoid duplicate entries inside the zip
+    if (usedNames.has(outName.toLowerCase())){
+      const dot = outName.lastIndexOf('.');
+      const base = dot > 0 ? outName.slice(0, dot) : outName;
+      const ext  = dot > 0 ? outName.slice(dot) : '';
+      let n = 2;
+      while (usedNames.has((base + '_' + n + ext).toLowerCase())) n++;
+      outName = base + '_' + n + ext;
+    }
+    usedNames.add(outName.toLowerCase());
+
+    zipEntries.push({ name: outName, data: res.buf });
 
     let note = '';
     if (res.source === 'filename'){
-      note = '  (filename rename only — no internal string in file)';
+      note = '  (filename rename only — no internal string)';
     } else if (res.internalUpdated){
       note = updateHash && res.hashHits
-        ? `  •  internal string updated + hash (${res.hashHits}×)`
+        ? `  •  internal string + hash (${res.hashHits}×)`
         : '  •  internal string updated';
     } else {
       note = '  (filename rename only — internal string left as-is)';
@@ -482,11 +589,28 @@ async function doConvert(gender){
 
     log(`✓ ${it.file.name}\n   → ${outName}\n   "${res.oldName}"  ➜  "${res.newName}"${note}`, 'g');
     ok++;
-    await sleep(300);
   }
 
-  log(`Finished — ${ok} converted, ${skipped} skipped.`, ok ? 'g' : 'w');
-  if (ok) log(`Check your browser's Downloads folder.`, 'a');
+  if (!zipEntries.length){
+    log(`Nothing to package — no files were converted.`, 'w');
+    return;
+  }
+
+  // Build the zip
+  try {
+    const zipBytes = makeZip(zipEntries);
+    const zipBlob  = new Blob([zipBytes], { type: 'application/zip' });
+    const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const zipName = `ytd_ydd_${genderTag}_${ts}.zip`;
+    download(zipBlob, zipName);
+    log(`📦 Packaged ${zipEntries.length} file(s) into ${zipName} (${fmtSize(zipBlob.size)})`, 'a');
+  } catch (e){
+    log(`✗ Failed to build zip: ${e.message}`, 'b');
+    return;
+  }
+
+  log(`Finished — ${ok} converted, ${skipped} skipped, ${failed} failed.`, ok ? 'g' : 'w');
+  log(`Check your browser's Downloads folder for the .zip.`, 'a');
 }
 
 /* ============================================================
