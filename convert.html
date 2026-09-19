@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>YTD / YDD Name Changer</title>
+<style>
+  :root{
+    --bg:#0d1117; --panel:#161b22; --panel2:#1c232d; --line:#2b323d;
+    --txt:#e6edf3; --muted:#8b949e; --accent:#58a6ff;
+    --good:#3fb950; --bad:#f85149; --warn:#d29922;
+    --female:#ff6ec7; --male:#4fa3ff;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; padding:28px 16px 60px;
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Courier New",monospace;
+    background:radial-gradient(1100px 560px at 50% -12%, #1b2431, #0d1117 62%);
+    color:var(--txt); min-height:100vh;
+  }
+  .wrap{max-width:900px;margin:0 auto}
+  header{text-align:center;margin-bottom:26px}
+  h1{
+    font-size:26px;margin:0 0 6px;letter-spacing:.5px;
+    background:linear-gradient(90deg,#58a6ff,#ff6ec7);
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+  }
+  header p{margin:0;color:var(--muted);font-size:13px}
+
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px;margin-bottom:16px}
+
+  #drop{border:2px dashed #303a48;border-radius:12px;padding:34px 18px;text-align:center;cursor:pointer;transition:.18s;background:var(--panel)}
+  #drop:hover,#drop.over{border-color:var(--accent);background:#182231}
+  #drop .big{font-size:15px;margin-bottom:6px}
+  #drop .sm{font-size:12px;color:var(--muted)}
+  #drop .icon{font-size:30px;display:block;margin-bottom:8px;opacity:.85}
+
+  .list-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+  .list-head h2{font-size:13px;margin:0;color:var(--muted);letter-spacing:1px;text-transform:uppercase}
+  #fileList{display:flex;flex-direction:column;gap:8px;max-height:340px;overflow:auto}
+  .fitem{display:flex;gap:10px;align-items:center;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:10px 12px;font-size:12.5px}
+  .fitem .nm{flex:1;min-width:0}
+  .fitem .nm b{display:block;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .fitem .nm span{color:var(--muted);font-size:11.5px;word-break:break-all;line-height:1.5}
+  .fitem .nm em{color:var(--accent);font-style:normal}
+  .badge{font-size:10.5px;padding:3px 8px;border-radius:20px;border:1px solid var(--line);white-space:nowrap;color:var(--muted)}
+  .badge.ok{color:var(--good);border-color:#1f6f36}
+  .badge.warn{color:var(--warn);border-color:#6d5515}
+  .badge.bad{color:var(--bad);border-color:#6e2222}
+  .x{background:none;border:none;color:var(--muted);cursor:pointer;font-size:16px;line-height:1;padding:2px 6px;border-radius:6px}
+  .x:hover{background:#2b323d;color:var(--bad)}
+
+  .empty{color:var(--muted);font-size:12.5px;text-align:center;padding:18px}
+
+  .controls{display:flex;gap:12px;flex-wrap:wrap;align-items:center;justify-content:space-between}
+  .opt{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted)}
+  .opt input{accent-color:var(--accent);width:15px;height:15px}
+  .btn{border:none;border-radius:9px;padding:12px 26px;font-family:inherit;font-size:14px;font-weight:700;letter-spacing:.4px;cursor:pointer;transition:.15s;background:linear-gradient(90deg,#1f6feb,#58a6ff);color:#fff}
+  .btn:hover{filter:brightness(1.12);transform:translateY(-1px)}
+  .btn:disabled{opacity:.4;cursor:not-allowed;transform:none;filter:none}
+  .btn.ghost{background:transparent;border:1px solid var(--line);color:var(--muted);font-weight:600;padding:10px 18px}
+  .btn.ghost:hover{border-color:var(--bad);color:var(--bad);filter:none}
+
+  #log{background:#0b0f14;border:1px solid var(--line);border-radius:10px;padding:12px;font-size:12px;line-height:1.6;white-space:pre-wrap;word-break:break-word;max-height:260px;overflow:auto;color:var(--muted)}
+  #log .g{color:var(--good)} #log .b{color:var(--bad)}
+  #log .w{color:var(--warn)} #log .a{color:var(--accent)}
+
+  .modal{position:fixed;inset:0;background:rgba(5,8,12,.82);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:50;padding:20px;opacity:0;pointer-events:none;transition:.18s}
+  .modal.show{opacity:1;pointer-events:auto}
+  .modal-card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:28px;max-width:520px;width:100%;text-align:center;box-shadow:0 24px 70px rgba(0,0,0,.65);transform:scale(.95);transition:.18s}
+  .modal.show .modal-card{transform:scale(1)}
+  .modal-card h2{margin:0 0 8px;font-size:20px}
+  .modal-card p{margin:0 0 22px;color:var(--muted);font-size:13px}
+  .genders{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:18px}
+  .gender{border:2px solid var(--line);background:var(--panel2);color:var(--txt);border-radius:12px;padding:22px 10px;cursor:pointer;font-family:inherit;font-size:16px;font-weight:700;transition:.16s;line-height:1.5}
+  .gender small{display:block;font-size:11px;font-weight:400;color:var(--muted);margin-top:6px}
+  .gender.f:hover{border-color:var(--female);background:#2a1a26;box-shadow:0 0 0 4px rgba(255,110,199,.08)}
+  .gender.m:hover{border-color:var(--male);background:#16222f;box-shadow:0 0 0 4px rgba(79,163,255,.08)}
+  .modal-card .cancel{background:none;border:none;color:var(--muted);cursor:pointer;font-family:inherit;font-size:12.5px;text-decoration:underline;padding:6px}
+  .modal-card .cancel:hover{color:var(--txt)}
+  @media(max-width:520px){.genders{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <h1>YTD / YDD Name Changer</h1>
+    <p>Convert ped assets for <b>mp_f_freemode_01^</b> (female) or <b>mp_m_freemode_01^</b> (male)</p>
+  </header>
+
+  <div id="drop" class="card" style="padding:0">
+    <div style="padding:34px 18px">
+      <span class="icon">📦</span>
+      <div class="big">Drop your <b>.ytd</b> / <b>.ydd</b> files here</div>
+      <div class="sm">or click to browse &nbsp;•&nbsp; multiple files supported</div>
+    </div>
+  </div>
+  <input type="file" id="picker" multiple accept=".ytd,.ydd" hidden />
+
+  <div class="card">
+    <div class="list-head">
+      <h2>Queue <span id="count">(0)</span></h2>
+      <button class="btn ghost" id="clearBtn" style="padding:6px 14px;font-size:11px">Clear all</button>
+    </div>
+    <div id="fileList"><div class="empty">No files loaded yet.</div></div>
+  </div>
+
+  <div class="card">
+    <div class="controls">
+      <label class="opt">
+        <input type="checkbox" id="hashOpt" checked />
+        Update internal name-hash if a name string exists
+      </label>
+      <button class="btn" id="convertBtn">⚡ Convert</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="list-head"><h2>Log</h2></div>
+    <div id="log">Ready. Import some files to begin…</div>
+  </div>
+
+</div>
+
+<div class="modal" id="modal">
+  <div class="modal-card">
+    <h2>Who is this for?</h2>
+    <p>Select the ped gender these files should be converted to.</p>
+    <div class="genders">
+      <button class="gender f" data-gender="f">♀ Female<small>mp_f_freemode_01^</small></button>
+      <button class="gender m" data-gender="m">♂ Male<small>mp_m_freemode_01^</small></button>
+    </div>
+    <button class="cancel" id="cancelBtn">Cancel</button>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   CONSTANTS
+   ============================================================ */
+const FEMALE_PREFIX = 'mp_f_freemode_01';
+const MALE_PREFIX   = 'mp_m_freemode_01';
+const VALID_EXT     = ['ytd', 'ydd'];
+
+/* ============================================================
+   STATE
+   ============================================================ */
+let items = [];
+let uid = 0;
+
+/* ============================================================
+   HELPERS
+   ============================================================ */
+const $ = (id) => document.getElementById(id);
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+function lowerByte(b){ return (b >= 0x41 && b <= 0x5A) ? b + 0x20 : b; }
+function strCodes(s){ const a = new Array(s.length); for (let i=0;i<s.length;i++) a[i]=s.charCodeAt(i); return a; }
+
+function findAscii(hay, needleCodes, from = 0){
+  const n = needleCodes.length;
+  if (n === 0 || hay.length < n) return -1;
+  outer:
+  for (let i = from; i <= hay.length - n; i++){
+    for (let j = 0; j < n; j++){
+      if (lowerByte(hay[i + j]) !== lowerByte(needleCodes[j])) continue outer;
+    }
+    return i;
+  }
+  return -1;
+}
+
+function readNameAt(buf, off, maxLen = 300){
+  const limit = Math.min(buf.length, off + maxLen);
+  let end = -1;
+  for (let i = off; i < limit; i++){
+    const b = buf[i];
+    if (b === 0x00){ end = i; break; }
+    if (b < 0x20 || b > 0x7E) return null;
+  }
+  if (end < 0) return null;
+  let s = '';
+  for (let i = off; i < end; i++) s += String.fromCharCode(buf[i]);
+  return { text: s, end };
+}
+
+function joaat(str){
+  let h = 0;
+  str = str.toLowerCase();
+  for (let i = 0; i < str.length; i++){
+    h = (h + str.charCodeAt(i)) >>> 0;
+    h = (h + (h << 10)) >>> 0;
+    h = (h ^ (h >>> 6)) >>> 0;
+  }
+  h = (h + (h << 3)) >>> 0;
+  h = (h ^ (h >>> 11)) >>> 0;
+  h = (h + (h << 15)) >>> 0;
+  return h >>> 0;
+}
+
+function stemOf(filename){
+  const i = filename.lastIndexOf('.');
+  return i > 0 ? filename.slice(0, i) : filename;
+}
+
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, c => (
+    { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]
+  ));
+}
+function fmtSize(b){
+  if (b < 1024) return b + ' B';
+  if (b < 1048576) return (b/1024).toFixed(1) + ' KB';
+  return (b/1048576).toFixed(2) + ' MB';
+}
+
+/* ============================================================
+   NAME DETECTION
+   Most GTA V YTD/YDD files (RSC7) do NOT store a readable
+   internal name. The name is purely the filename. So we always
+   fall back to the filename stem if no internal string exists.
+   ============================================================ */
+function detectName(buf, filename){
+  const stem = stemOf(filename);
+
+  // 1) Filename stem as a clean C-string inside the file
+  let off = findAscii(buf, strCodes(stem));
+  if (off >= 0){
+    const info = readNameAt(buf, off);
+    if (info) return { off, text: info.text, end: info.end, source: 'internal' };
+    return { off, text: stem, end: off + stem.length, source: 'internal-partial' };
+  }
+
+  // 2) Full filename with extension
+  off = findAscii(buf, strCodes(filename));
+  if (off >= 0){
+    const info = readNameAt(buf, off);
+    if (info) return { off, text: info.text, end: info.end, source: 'internal' };
+  }
+
+  // 3) Any known ped prefix (file might already be a freemode asset)
+  for (const p of [FEMALE_PREFIX, MALE_PREFIX]){
+    off = findAscii(buf, strCodes(p));
+    if (off >= 0){
+      const info = readNameAt(buf, off);
+      if (info) return { off, text: info.text, end: info.end, source: 'internal' };
+    }
+  }
+
+  // 4) Fallback — no readable name inside. Use the filename stem.
+  return { off: -1, text: stem, end: -1, source: 'filename' };
+}
+
+/* ============================================================
+   NAME BUILDING
+   Rules:
+     - If old name already starts with a known ped prefix
+       (with or without ^), swap the prefix, keep the rest.
+     - Otherwise, prepend targetPrefix + '^'.
+   ============================================================ */
+function buildNewName(oldName, targetPrefix){
+  const lower = oldName.toLowerCase();
+
+  for (const p of [FEMALE_PREFIX, MALE_PREFIX]){
+    const pl = p.toLowerCase();
+    if (lower.startsWith(pl + '^')){
+      return targetPrefix + '^' + oldName.slice(p.length + 1);
+    }
+    if (lower.startsWith(pl)){
+      return targetPrefix + oldName.slice(p.length);
+    }
+  }
+  return targetPrefix + '^' + oldName;
+}
+
+function newFileName(filename, targetPrefix){
+  const dot = filename.lastIndexOf('.');
+  const base = dot > 0 ? filename.slice(0, dot) : filename;
+  const ext  = dot > 0 ? filename.slice(dot) : '';
+  return buildNewName(base, targetPrefix) + ext;
+}
+
+/* ============================================================
+   CONVERT CORE
+   ============================================================ */
+function convertBuffer(src, filename, targetPrefix, opts){
+  const buf = src.slice();
+  const found = detectName(buf, filename);
+
+  const oldName = found.text;
+  const newName = buildNewName(oldName, targetPrefix);
+  const noChange = (oldName === newName);
+
+  let hashHits = 0;
+
+  // Only touch file bytes if a real internal string was found
+  if (found.off >= 0 && !noChange){
+    const room = found.end - found.off;
+    if (newName.length <= room){
+      for (let k = 0; k < room; k++){
+        buf[found.off + k] = (k < newName.length) ? newName.charCodeAt(k) : 0x00;
+      }
+      if (opts.updateHash){
+        const oldHash = joaat(oldName);
+        const newHash = joaat(newName);
+        if (oldHash !== newHash){
+          const o0 =  oldHash        & 0xFF, o1 = (oldHash >>>  8) & 0xFF,
+                o2 = (oldHash >>> 16) & 0xFF, o3 = (oldHash >>> 24) & 0xFF;
+          const n0 =  newHash        & 0xFF, n1 = (newHash >>>  8) & 0xFF,
+                n2 = (newHash >>> 16) & 0xFF, n3 = (newHash >>> 24) & 0xFF;
+          for (let i = 0; i <= buf.length - 4; i++){
+            if (buf[i] === o0 && buf[i+1] === o1 && buf[i+2] === o2 && buf[i+3] === o3){
+              buf[i] = n0; buf[i+1] = n1; buf[i+2] = n2; buf[i+3] = n3;
+              hashHits++;
+            }
+          }
+        }
+      }
+    }
+    // If newName is longer than room, we skip byte rewriting.
+    // The filename rename is what actually matters for the game.
+  }
+
+  return {
+    ok: true,
+    buf,
+    oldName,
+    newName,
+    hashHits,
+    source: found.source,
+    internalUpdated: (found.off >= 0 && newName.length <= (found.end - found.off)),
+    noChange
+  };
+}
+
+/* ============================================================
+   LOGGING
+   ============================================================ */
+function log(msg, cls = ''){
+  const el = $('log');
+  const line = document.createElement('div');
+  if (cls) line.className = cls;
+  line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+  el.appendChild(line);
+  el.scrollTop = el.scrollHeight;
+}
+
+/* ============================================================
+   QUEUE
+   ============================================================ */
+async function addFiles(fileList){
+  const files = Array.from(fileList);
+  let added = 0;
+
+  for (const f of files){
+    const ext = (f.name.split('.').pop() || '').toLowerCase();
+    if (!VALID_EXT.includes(ext)){
+      log(`Skipped "${f.name}" — only .ytd and .ydd are supported.`, 'w');
+      continue;
+    }
+    try {
+      const buf = new Uint8Array(await f.arrayBuffer());
+      const found = detectName(buf, f.name);
+      items.push({
+        id: ++uid,
+        file: f,
+        buf,
+        detected: found,
+        size: f.size
+      });
+      added++;
+    } catch (e){
+      log(`Failed to read "${f.name}": ${e.message}`, 'b');
+    }
+  }
+  if (added) log(`Added ${added} file${added > 1 ? 's' : ''} to the queue.`, 'a');
+  render();
+}
+
+function render(){
+  const list = $('fileList');
+  $('count').textContent = `(${items.length})`;
+  $('convertBtn').disabled = items.length === 0;
+
+  if (!items.length){
+    list.innerHTML = '<div class="empty">No files loaded yet.</div>';
+    return;
+  }
+
+  list.innerHTML = '';
+  for (const it of items){
+    const d = it.detected;
+    const base = d.text;
+
+    const sub = d.source === 'filename'
+      ? `name: <em>${escapeHtml(base)}</em> <span style="color:#8b949e">(from filename — no internal name string)</span>`
+      : `internal: <em>${escapeHtml(base)}</em>`;
+
+    const badge = d.source === 'filename'
+      ? '<span class="badge warn">filename</span>'
+      : '<span class="badge ok">internal</span>';
+
+    const div = document.createElement('div');
+    div.className = 'fitem';
+    div.innerHTML = `
+      <div class="nm">
+        <b>${escapeHtml(it.file.name)}</b>
+        <span>${sub} &nbsp;•&nbsp; ${fmtSize(it.size)}</span>
+      </div>
+      ${badge}
+      <button class="x" data-id="${it.id}" title="Remove">✕</button>
+    `;
+    list.appendChild(div);
+  }
+
+  list.querySelectorAll('.x').forEach(btn => {
+    btn.addEventListener('click', () => {
+      items = items.filter(i => i.id !== Number(btn.dataset.id));
+      render();
+    });
+  });
+}
+
+/* ============================================================
+   MODAL
+   ============================================================ */
+function showModal(){ $('modal').classList.add('show'); }
+function hideModal(){ $('modal').classList.remove('show'); }
+
+/* ============================================================
+   DOWNLOAD
+   ============================================================ */
+function download(blob, filename){
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+}
+
+/* ============================================================
+   CONVERT
+   ============================================================ */
+async function doConvert(gender){
+  hideModal();
+
+  const targetPrefix = (gender === 'f') ? FEMALE_PREFIX : MALE_PREFIX;
+  const updateHash   = $('hashOpt').checked;
+
+  log(`──────────────────────────────────────────`, '');
+  log(`Converting ${items.length} file(s) → ${targetPrefix}^  (${gender === 'f' ? 'FEMALE' : 'MALE'})`, 'a');
+
+  let ok = 0, skipped = 0;
+
+  for (const it of items){
+    const res = convertBuffer(it.buf, it.file.name, targetPrefix, { updateHash });
+
+    if (res.noChange){
+      log(`– ${it.file.name}\n   already "${res.newName}" — no change needed.`, 'w');
+      skipped++;
+      continue;
+    }
+
+    const outName = newFileName(it.file.name, targetPrefix);
+    const blob = new Blob([res.buf], { type: 'application/octet-stream' });
+    download(blob, outName);
+
+    let note = '';
+    if (res.source === 'filename'){
+      note = '  (filename rename only — no internal string in file)';
+    } else if (res.internalUpdated){
+      note = updateHash && res.hashHits
+        ? `  •  internal string updated + hash (${res.hashHits}×)`
+        : '  •  internal string updated';
+    } else {
+      note = '  (filename rename only — internal string left as-is)';
+    }
+
+    log(`✓ ${it.file.name}\n   → ${outName}\n   "${res.oldName}"  ➜  "${res.newName}"${note}`, 'g');
+    ok++;
+    await sleep(300);
+  }
+
+  log(`Finished — ${ok} converted, ${skipped} skipped.`, ok ? 'g' : 'w');
+  if (ok) log(`Check your browser's Downloads folder.`, 'a');
+}
+
+/* ============================================================
+   EVENTS
+   ============================================================ */
+const drop = $('drop');
+const picker = $('picker');
+
+drop.addEventListener('click', () => picker.click());
+picker.addEventListener('change', (e) => { addFiles(e.target.files); picker.value = ''; });
+
+['dragenter','dragover'].forEach(ev =>
+  drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add('over'); })
+);
+['dragleave','drop'].forEach(ev =>
+  drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove('over'); })
+);
+drop.addEventListener('drop', (e) => {
+  if (e.dataTransfer && e.dataTransfer.files.length) addFiles(e.dataTransfer.files);
+});
+
+$('convertBtn').addEventListener('click', () => {
+  if (!items.length){ log('Nothing to convert — add some files first.', 'w'); return; }
+  showModal();
+});
+$('cancelBtn').addEventListener('click', hideModal);
+$('modal').addEventListener('click', (e) => { if (e.target === $('modal')) hideModal(); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideModal(); });
+
+document.querySelectorAll('.gender').forEach(btn => {
+  btn.addEventListener('click', () => doConvert(btn.dataset.gender));
+});
+
+$('clearBtn').addEventListener('click', () => {
+  items = [];
+  render();
+  log('Queue cleared.', 'w');
+});
+
+render();
+</script>
+</body>
+</html>
